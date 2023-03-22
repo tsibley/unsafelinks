@@ -45,16 +45,40 @@
 # Some of these my work hasn't enabled (e.g. Safelinks can _also_ permanently
 # rewrite URLs in emails).
 #
+use Plack::Builder;
 use Plack::Request;
 
-sub {
-    my $req = Plack::Request->new(shift);
- 
-    return [404, [], []] unless $req->path eq "/GetUrlReputation";
-    return [405, [], []] unless $req->method eq "POST";
+sub unfuck {
+    # URL Defense mangled this:
+    #
+    #   https://www.google.com/url?q=https://github.com/nextstrain/ebola/blob/bb9421bacbb2a3ce5db48c22cd716041858c913f/ingest/workflow/snakemake_rules/transform.smk#23L76-L84
+    #
+    # into:
+    #
+    #   https://www.google.com/url?q=https:**Agithub.com*nextstrain*ebola*blob*bb9421bacbb2a3ce5db48c22cd716041858c913f*ingest*workflow*snakemake_rules*transform.smk*23L76-L84
+    #
+    # Ugh my head.  WTF is "**A"??  Do not understand that yet.
+    my $url = shift;
+       $url =~ s{(?<=http[s]:)[*][*]A}{//};     # Replace "https:**A" with "https://"
+       $url =~ s{(.*)[*]}{$1#};                 # Replace last "*" with a "#" (terrible heuristic)
+       $url =~ s{[*]}{/}g;                      # Replace remaining "*" with "/"
+    return $url;
+}
 
-    my $url = $req->parameters->{Url};
-       $url =~ s{\Ahttps://urldefense[.]com/v3/__(.+?)__;.*\z}{$1 =~ s/[*]/#/gr}se;
+builder {
+    enable "SimpleLogger", level => "info";
 
-    return [302, ["Location", $url], []];
+    sub {
+        my $req = Plack::Request->new(shift);
+
+        return [404, [], []] unless $req->path eq "/GetUrlReputation";
+        return [405, [], []] unless $req->method eq "POST";
+
+        my $url = $req->parameters->{Url};
+           $url =~ s{\Ahttps://urldefense[.]com/v3/__(.+?)__;.*\z}{unfuck($1)}se;
+
+        $req->logger->({ level => "info", message => "Redirecting to <$url>" });
+
+        return [302, ["Location", $url], []];
+    }
 }
