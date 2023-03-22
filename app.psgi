@@ -47,6 +47,8 @@
 #
 use Plack::Builder;
 use Plack::Request;
+use List::Util qw< pairgrep pairs >;
+use URI;
 
 sub unfuck {
     # URL Defense mangled this:
@@ -65,6 +67,15 @@ sub unfuck {
     return $url;
 }
 
+sub deurchin {
+    my $url = URI->new(shift);
+
+    # Remove Google Analytics (Urchin) tracking params.
+    $url->query_form([ pairgrep { $a !~ /^utm_/ } $url->query_form ]);
+
+    return $url;
+}
+
 builder {
     enable "SimpleLogger", level => "info";
 
@@ -76,6 +87,7 @@ builder {
 
         my $url = $req->parameters->{Url};
            $url =~ s{\Ahttps://urldefense[.]com/v3/__(.+?)__;.*\z}{unfuck($1)}se;
+           $url = deurchin($url);
 
         $req->logger->({ level => "info", message => "Redirecting to <$url>" });
 
